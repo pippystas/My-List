@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:my_list/models/item.dart';
+import 'package:my_list/widgets/add_item.dart';
+import 'package:my_list/widgets/shopping_list.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -8,155 +11,113 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _shoppingList = <String>[];
-  final _cart = <String>[];
+  final _shoppingList = <Item>[];
+  double? _total;
+  bool get _allChecked =>
+      _shoppingList.every((i) => i.inCart) && _shoppingList.isNotEmpty;
 
-  void _addItem(String item) {
+  void _toggleItem(Item item) {
+    setState(() {
+      item.inCart = !item.inCart;
+    });
+  }
+
+  void _addItem(Item item) {
     setState(() {
       _shoppingList.add(item);
     });
   }
 
-  void _toggleItem(String item) {
+  Future<double?> _getTotal(BuildContext context) async {
+    final controller = TextEditingController();
+
+    final value = await showDialog<double?>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('How much was the total?'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Price (€)'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) {
+              final v = double.tryParse(controller.text.replaceAll(',', '.'));
+              Navigator.pop(ctx, v);
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null), // cancel
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final v = double.tryParse(controller.text.replaceAll(',', '.'));
+                Navigator.pop(ctx, v);
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+
     setState(() {
-      if (_cart.contains(item)) {
-        _cart.remove(item);
-      } else {
-        _cart.add(item);
-      }
+      _total = value; // store last total if provided
     });
+
+    return value;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton:
-          (_shoppingList.isNotEmpty && _cart.length == _shoppingList.length)
-          ? FloatingActionButton(
-              onPressed: () {
-                debugPrint("Complete list");
-                setState(() {
-                  _shoppingList.clear();
-                  _cart.clear();
-                });
-              },
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              child: Icon(
-                Icons.check,
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-            )
-          : null,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              children: [
-                ShoppingList(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            children: [
+              Expanded(
+                child: ShoppingList(
                   shoppingList: _shoppingList,
-                  cart: _cart,
                   onToggle: _toggleItem,
                 ),
-                AddItem(onItemAdded: _addItem),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class ShoppingList extends StatelessWidget {
-  const ShoppingList({
-    super.key,
-    required List<String> shoppingList,
-    required List<String> cart,
-    required this.onToggle,
-  }) : _shoppingList = shoppingList,
-       _cart = cart;
-
-  final List<String> _shoppingList;
-  final List<String> _cart;
-  final void Function(String) onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: ListView.separated(
-        itemCount: _shoppingList.length,
-        itemBuilder: (context, index) => ListTile(
-          title: Text(_shoppingList[index]),
-          contentPadding: EdgeInsets.zero,
-          leading: IconButton(
-            onPressed: () {
-              onToggle(_shoppingList[index]);
-            },
-            icon: Icon(
-              _cart.contains(_shoppingList[index])
-                  ? Icons.check_box
-                  : Icons.check_box_outline_blank,
-            ),
-          ),
-        ),
-        separatorBuilder: (BuildContext context, int index) {
-          return Divider(
-            height: 4,
-            color: Theme.of(context).colorScheme.primaryFixedDim,
-          );
-        },
-      ),
-    );
-  }
-}
-
-class AddItem extends StatefulWidget {
-  final void Function(String) onItemAdded;
-  const AddItem({super.key, required this.onItemAdded});
-
-  @override
-  State<AddItem> createState() => _AddItemState();
-}
-
-class _AddItemState extends State<AddItem> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(Icons.add, color: Theme.of(context).colorScheme.tertiary),
-          SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                hintText: 'Add Item...',
-                border: InputBorder.none,
               ),
-              onSubmitted: (value) {
-                final text = value.trim();
-                if (text.isEmpty) return;
-                widget.onItemAdded(text);
-                _controller.clear();
-              },
-            ),
+              AddItem(addItem: _addItem),
+            ],
           ),
-        ],
+        ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          if (!_allChecked) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Not all items are checked"),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 1),
+              ),
+            );
+          } else {
+            debugPrint("Complete list");
+            final total = await _getTotal(context);
+            if (total != null) {
+              setState(() {
+                _shoppingList.clear();
+              });
+            }
+          }
+        },
+        backgroundColor: Theme.of(context).colorScheme.surfaceDim,
+        child: Icon(
+          Icons.check,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
+      ),
+
+      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
     );
   }
 }
